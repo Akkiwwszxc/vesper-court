@@ -1,0 +1,631 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="description" content="Интерактивная 3D-модель жилого дома: вращайте здание, открывайте этажи как макет архитектора и выбирайте квартиру.">
+<meta name="theme-color" content="#070b16">
+<meta property="og:type" content="website">
+<meta property="og:title" content="Веспер Корт — 3D-модель дома">
+<meta property="og:description" content="Пять этажей, 20 квартир. Откройте любой этаж и посмотрите планировку.">
+<title>Веспер Корт</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Manrope:wght@500;600;700;800&display=swap">
+<style>
+/* Layout: one full-bleed night scene. Glass chrome floats above it: nav pills top-centre, floor rail left, unit sheet right (bottom sheet on phones). A single dark world by design, lit by warm lamps. */
+:root{
+  color-scheme:dark;
+  --bg:#070b16;
+  --ink:#eef1f8;
+  --mute:#93a0ba;
+  --glass:rgba(10,15,30,.68);
+  --glass-2:rgba(255,255,255,.08);
+  --line:rgba(255,255,255,.15);
+  --lamp:#ffb862;
+  --ok:#74d6a6;
+  --hold:#ffb862;
+  --sold:#7f89a0;
+  --f-display:"Manrope","Inter",system-ui,-apple-system,"Segoe UI",sans-serif;
+  --f-body:"Inter",system-ui,-apple-system,"Segoe UI",sans-serif;
+}
+*{box-sizing:border-box}
+html,body{height:100%}
+body{position:relative;margin:0;overflow:hidden;background:var(--bg);color:var(--ink);font:14px/1.45 var(--f-body);-webkit-font-smoothing:antialiased}
+#stage{position:absolute;inset:0;touch-action:none;cursor:grab}
+#stage:active{cursor:grabbing}
+#stage canvas{display:block;width:100%;height:100%;outline:none}
+#ui{position:absolute;inset:0;pointer-events:none;padding-block:12px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+.glass{pointer-events:auto;background:var(--glass);-webkit-backdrop-filter:blur(14px) saturate(1.2);backdrop-filter:blur(14px) saturate(1.2);border:1px solid var(--line)}
+button{font-family:inherit}
+button:focus-visible,textarea:focus-visible{outline:2px solid var(--lamp);outline-offset:2px}
+
+/* top bar */
+#top{display:grid;grid-template-columns:1fr auto 1fr;align-items:center;gap:10px 12px}
+.brand{display:flex;flex-direction:column;line-height:1.1;pointer-events:auto}
+.brand b{font:700 13px var(--f-display);letter-spacing:.24em}
+.brand span{font-size:11px;color:var(--mute);margin-top:4px;letter-spacing:.04em;white-space:nowrap}
+.tools{display:flex;justify-content:flex-end;align-items:center;gap:8px}
+.pills,.seg{display:flex;padding:4px;gap:2px;border-radius:999px}
+.seg{padding:3px}
+.pills button,.seg button{all:unset;cursor:pointer;box-sizing:border-box;padding:9px 16px;border-radius:999px;font:600 11px var(--f-display);letter-spacing:.14em;text-transform:uppercase;color:var(--mute);transition:background .25s,color .25s}
+.seg button{padding:7px 11px;font-size:10.5px}
+.pills button:hover,.seg button:hover{color:var(--ink)}
+.pills button.on,.seg button.on{background:#fff;color:#0a0f1e}
+.pills button:focus-visible,.seg button:focus-visible,.cta:focus-visible,.unit:focus-visible,#rail button:focus-visible{outline:2px solid var(--lamp);outline-offset:2px}
+.cta{all:unset;cursor:pointer;box-sizing:border-box;text-align:center;padding:10px 18px;border-radius:999px;background:#fff;color:#0a0f1e;font:600 11px var(--f-display);letter-spacing:.14em;text-transform:uppercase;pointer-events:auto;transition:background .2s}
+.cta:hover{background:var(--lamp)}
+.ghost{all:unset;cursor:pointer;box-sizing:border-box;padding:10px 16px;border-radius:999px;border:1px solid var(--line);color:var(--ink);font:600 11px var(--f-display);letter-spacing:.14em;text-transform:uppercase}
+.ghost:hover{background:var(--glass-2)}
+@media (max-width:640px){
+  #top{grid-template-columns:1fr auto;grid-template-areas:"brand tools" "nav nav"}
+  .brand{grid-area:brand}.tools{grid-area:tools}#nav{grid-area:nav;justify-self:center}
+}
+
+/* floor rail */
+#rail{position:absolute;left:max(16px,env(safe-area-inset-left,0px));top:50%;transform:translateY(-50%);display:flex;flex-direction:column;align-items:center;gap:3px;padding:6px;border-radius:24px}
+#rail button{all:unset;cursor:pointer;width:34px;height:34px;border-radius:50%;display:grid;place-items:center;font:600 12px var(--f-display);color:var(--mute);transition:background .2s,color .2s}
+#rail button:hover{color:var(--ink);background:var(--glass-2)}
+#rail button.on{background:var(--lamp);color:#1b1206}
+#rail hr{width:18px;border:0;border-top:1px solid var(--line);margin:3px 0}
+#rail small{font:600 9px var(--f-display);letter-spacing:.16em;color:var(--mute);margin:2px 0 3px}
+
+/* unit sheet */
+#sheet{position:absolute;right:max(16px,env(safe-area-inset-right,0px));top:78px;bottom:60px;width:min(340px,calc(100% - 32px));display:flex;flex-direction:column;border-radius:20px;overflow:hidden;animation:rise .5s cubic-bezier(.2,.8,.2,1)}
+@keyframes rise{from{opacity:0;transform:translateY(14px)}to{opacity:1;transform:none}}
+#sheet header{display:flex;justify-content:space-between;align-items:flex-start;padding:14px 16px 8px}
+#sheet h2{margin:0;font:700 22px var(--f-display);letter-spacing:-.01em}
+#sheet header p{margin:2px 0 0;color:var(--mute);font-size:12px}
+#shClose{all:unset;cursor:pointer;width:30px;height:30px;border-radius:50%;display:grid;place-items:center;background:var(--glass-2);color:var(--ink);font-size:13px}
+#shClose:hover{background:var(--line)}
+#unitList{list-style:none;margin:0;padding:0 8px 8px;display:grid;gap:4px;overflow:auto;min-height:0}
+.unit{all:unset;box-sizing:border-box;width:100%;cursor:pointer;display:grid;grid-template-columns:auto 1fr auto;gap:2px 12px;align-items:center;padding:10px;border-radius:14px;border:1px solid transparent}
+.unit:hover{background:var(--glass-2)}
+.unit.on{background:var(--glass-2);border-color:var(--line)}
+.unit .nm{grid-row:1/3;font:700 20px var(--f-display);min-width:36px}
+.unit .sp{font-size:12px;color:var(--mute)}
+.unit .pr{font:600 13px var(--f-display);text-align:right;font-variant-numeric:tabular-nums}
+.st{display:inline-flex;align-items:center;justify-content:flex-end;gap:6px;font-size:10.5px;letter-spacing:.08em;text-transform:uppercase;color:var(--mute)}
+.st::before{content:"";width:7px;height:7px;border-radius:50%;background:currentColor}
+.st.available{color:var(--ok)}.st.reserved{color:var(--hold)}.st.sold{color:var(--sold)}
+#unitCard{padding:12px 16px 16px;border-top:1px solid var(--line);display:grid;gap:10px;overflow:auto;min-height:0}
+#unitCard h3{margin:0;font:700 15px var(--f-display);display:flex;justify-content:space-between;align-items:center;gap:8px}
+#unitCard dl{display:grid;grid-template-columns:auto 1fr;gap:5px 14px;margin:0;font-size:12.5px}
+#unitCard dt{color:var(--mute)}
+#unitCard dd{margin:0;text-align:right;font-variant-numeric:tabular-nums}
+
+/* hint + tooltip */
+#hint{position:absolute;left:50%;bottom:max(14px,env(safe-area-inset-bottom,0px));transform:translateX(-50%);padding:9px 16px;border-radius:16px;font-size:12px;text-align:center;width:max-content;max-width:calc(100% - 32px);pointer-events:none;transition:opacity .4s}
+#tip{position:absolute;left:0;top:0;padding:6px 10px;border-radius:10px;font-size:12px;white-space:nowrap;pointer-events:none;background:var(--glass);border:1px solid var(--line);-webkit-backdrop-filter:blur(10px);backdrop-filter:blur(10px)}
+@media (max-width:760px){
+  #sheet{left:max(16px,env(safe-area-inset-left,0px));right:max(16px,env(safe-area-inset-right,0px));width:auto;top:auto;bottom:max(12px,env(safe-area-inset-bottom,0px));max-height:52%;overflow-y:auto}
+  #rail{top:122px;transform:none;padding:5px}
+  #rail button{width:30px;height:30px;font-size:11px}
+  body.open #hint{display:none}
+  #sheet>*{flex:none}
+  #unitList,#unitCard{overflow:visible}
+}
+
+/* contact */
+.modal{position:absolute;inset:0;z-index:20;display:grid;place-items:center;padding:16px;background:rgba(4,7,16,.62);-webkit-backdrop-filter:blur(6px);backdrop-filter:blur(6px)}
+.modal .card{width:min(430px,100%);max-height:100%;overflow:auto;background:#0e1424;border:1px solid var(--line);border-radius:22px;padding:22px;display:grid;gap:12px}
+.modal h3{margin:0;font:700 22px var(--f-display)}
+.modal p{margin:0;color:var(--mute);font-size:13px}
+.crow{display:flex;gap:10px;align-items:center;justify-content:space-between;padding:10px 0;border-top:1px solid var(--line);font-size:13.5px}
+.crow span{-webkit-user-select:text;user-select:text}
+.crow em{font-style:normal;color:var(--mute);font-size:11px;letter-spacing:.1em;text-transform:uppercase;display:block;margin-bottom:2px}
+.mini{all:unset;cursor:pointer;font:600 11px var(--f-display);letter-spacing:.1em;text-transform:uppercase;color:var(--lamp);padding:6px 4px;flex:none}
+.modal label{font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--mute)}
+textarea{width:100%;resize:vertical;background:rgba(255,255,255,.05);color:var(--ink);border:1px solid var(--line);border-radius:12px;padding:10px 12px;font:13px/1.45 var(--f-body)}
+.btns{display:flex;gap:10px;flex-wrap:wrap}
+#ctNote{min-height:1.4em;color:var(--ok)!important}
+
+#sheet header>div:first-child{min-width:0}
+#sheet .seg{align-self:center;margin-left:auto;margin-right:8px;background:var(--glass-2);border:1px solid var(--line)}
+
+/* photos and shoot mode */
+.ph{display:flex;gap:6px;overflow-x:auto;padding-bottom:2px}
+.ph img{height:92px;width:auto;border-radius:10px;flex:none;display:block}
+body.shoot #ui,body.shoot #boot{display:none}
+
+/* boot */
+#boot{position:absolute;inset:0;z-index:30;display:grid;place-items:center;background:var(--bg);text-align:center;transition:opacity .9s ease,visibility .9s;padding:24px}
+#boot.gone{opacity:0;visibility:hidden}
+#boot b{display:block;font:700 15px var(--f-display);letter-spacing:.34em}
+#boot span{display:block;margin-top:12px;color:var(--mute);font-size:12px;letter-spacing:.06em}
+#boot.err span{color:#ffb4a8}
+@media (prefers-reduced-motion:reduce){#sheet{animation:none}*{transition-duration:.01ms!important}}
+</style>
+<style>[hidden]{display:none!important}img{max-width:100%}</style>
+</head>
+<body>
+
+<main id="stage" role="img" aria-label="Интерактивная 3D-модель жилого дома «Веспер Корт» ночью: пятиэтажное здание"></main>
+
+<div id="ui">
+  <header id="top">
+    <div class="brand"><b>ВЕСПЕР КОРТ</b><span>20 квартир · ул. Ольховая, 14</span></div>
+    <nav id="nav" class="pills glass" aria-label="Виды">
+      <button type="button" data-view="homes" class="on">Квартиры</button>
+      <button type="button" data-view="rooftop">Крыша</button>
+      <button type="button" data-view="street">Улица</button>
+    </nav>
+    <div class="tools">
+      <button type="button" id="contactBtn" class="cta">Связаться</button>
+    </div>
+  </header>
+
+  <aside id="rail" class="glass" aria-label="Этажи"></aside>
+
+  <section id="sheet" class="glass" aria-live="polite" hidden>
+    <header>
+      <div><h2 id="shTitle">Этаж 1</h2><p id="shSub"></p></div>
+      <div class="seg" role="group" aria-label="Единицы площади">
+        <button type="button" id="uFt" aria-pressed="false">ФУТ²</button>
+        <button type="button" id="uM" class="on" aria-pressed="true">М²</button>
+      </div>
+      <button type="button" id="shClose" aria-label="Закрыть план этажа">✕</button>
+    </header>
+    <ul id="unitList"></ul>
+    <article id="unitCard" hidden></article>
+  </section>
+
+  <p id="hint" class="glass"></p>
+  <div id="tip" class="glass" hidden></div>
+</div>
+
+<div id="contact" class="modal" role="dialog" aria-modal="true" aria-labelledby="ctTitle" hidden>
+  <div class="card">
+    <h3 id="ctTitle">Офис продаж</h3>
+    <p>Ежедневно с 10:00 до 18:00. «Веспер Корт» — демонстрационный проект: все квартиры, цены и контакты выдуманы.</p>
+    <div class="crow"><div><em>Адрес</em><span>ул. Ольховая, 14</span></div></div>
+    <div class="crow"><div><em>Телефон</em><span id="ctPhone">+7 700 000 01 42</span></div><button type="button" class="mini" data-copy="#ctPhone">Копировать</button></div>
+    <div class="crow"><div><em>Почта</em><span id="ctMail">info@vespercourt.example</span></div><button type="button" class="mini" data-copy="#ctMail">Копировать</button></div>
+    <label for="ctMsg">Ваше сообщение</label>
+    <textarea id="ctMsg" rows="4"></textarea>
+    <div class="btns"><button type="button" id="ctCopy" class="cta">Скопировать сообщение</button><button type="button" id="ctClose" class="ghost">Закрыть</button></div>
+    <p id="ctNote" aria-live="polite"></p>
+  </div>
+</div>
+
+<div id="boot"><div><b>ВЕСПЕР КОРТ</b><span>Строим квартал…</span></div></div>
+
+<script src="vendor/three.min.js"></script>
+<script>
+(function(){
+'use strict';
+const $=s=>document.querySelector(s);
+const bootEl=$('#boot');
+function fail(m){bootEl.classList.add('err');bootEl.querySelector('span').textContent=m}
+if(!window.THREE){fail('Не загрузилась 3D-библиотека. Проверьте соединение и обновите страницу.');return}
+const T=THREE;
+const reduce=matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+/* ---- model constants (metres) ---- */
+const FLOORS=5,FH=3.3,SL=.35,W=25,D=13,WT=.35,ROOF_Y=FLOORS*FH;
+const SPLIT=[-2,0,2,0,-2],LET=['А','Б','В','Г'];
+
+/* ---- 32 homes, seeded so every load shows the same building ---- */
+function mulberry(a){return()=>{a|=0;a=a+0x6D2B79F5|0;let t=Math.imul(a^a>>>15,1|a);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296}}
+const rnd=mulberry(20261125);
+const homes=[];
+for(let f=1;f<=FLOORS;f++){const sp=SPLIT[f-1];
+  for(let k=0;k<4;k++){
+    const west=k%2===0,front=k<2;
+    const x0=west?-W/2+WT:sp+1,x1=west?sp-1:W/2-WT;
+    const z0=front?1:-D/2+WT,z1=front?D/2-WT:-1;
+    const area=(x1-x0)*(z1-z0),r=rnd(),pS=.6-.1*f;
+    const status=r<pS?'sold':r<pS+.18?'reserved':'available';
+    const ppsm=640000+f*14000+(front?25000:0)+(west?0:6000);
+    homes.push({id:f+LET[k],f,k,west,front,x0,x1,z0,z1,area,status,
+      price:Math.round(area*ppsm/100000)*100000,beds:area<50?1:2,study:area>=62,baths:area>=62?2:1,
+      view:(front?'На улицу':'Во двор')+(f>=4?' и на город':'')});
+  }}
+
+/* ---- helpers ---- */
+const ease=t=>t<.5?4*t*t*t:1-Math.pow(-2*t+2,3)/2;
+const clamp=(v,a,b)=>Math.min(b,Math.max(a,v));
+const STAT_RU={available:'Свободна',reserved:'Бронь',sold:'Продана'};
+const bedsTxt=n=>n===1?'1 спальня':n+' спальни';
+const UNIT=new T.BoxGeometry(1,1,1),PLANE=new T.PlaneGeometry(1,1);
+/* box whose texture coordinates are in metres, so a texture keeps one real-world scale on every wall */
+function boxGeo(w,h,d,tu,tv){const g=new T.BoxGeometry(w,h,d),uv=g.attributes.uv;
+  const sz=[[d,h],[d,h],[w,d],[w,d],[w,h],[w,h]];
+  for(let i=0;i<24;i++){const s=sz[i>>2];uv.setXY(i,uv.getX(i)*s[0]/tu,uv.getY(i)*s[1]/tv)}
+  return g}
+function put(parent,geo,mat,x,y,z,sx,sy,sz,shadow){const m=new T.Mesh(geo,mat);m.position.set(x,y,z);
+  if(sx!==undefined)m.scale.set(sx,sy,sz);if(shadow){m.castShadow=true;m.receiveShadow=true}parent.add(m);return m}
+const cube=(p,mat,x,y,z,w,h,d,sh)=>put(p,UNIT,mat,x,y,z,w,h,d,sh);
+const std=(c,o)=>new T.MeshStandardMaterial(Object.assign({color:c,roughness:.85,metalness:.05},o||{}));
+const bas=(c,o)=>new T.MeshBasicMaterial(Object.assign({color:c},o||{}));
+function rr(g,x,y,w,h,r){g.beginPath();g.moveTo(x+r,y);g.arcTo(x+w,y,x+w,y+h,r);g.arcTo(x+w,y+h,x,y+h,r);g.arcTo(x,y+h,x,y,r);g.arcTo(x,y,x+w,y,r);g.closePath()}
+function canvasTex(w,h,draw,repeat){const c=document.createElement('canvas');c.width=w;c.height=h;draw(c.getContext('2d'),w,h);
+  const t=new T.CanvasTexture(c);if(repeat){t.wrapS=t.wrapT=T.RepeatWrapping;t.anisotropy=4}return t}
+
+/* ---- textures drawn in code ---- */
+const brickTex=canvasTex(256,256,(g,w,h)=>{g.fillStyle='#2a1a17';g.fillRect(0,0,w,h);
+  const rows=16,bw=w/4,bh=h/rows;
+  for(let r=0;r<rows;r++)for(let c=-1;c<5;c++){const x=c*bw+(r%2?bw/2:0),v=rnd()*30|0;
+    g.fillStyle='rgb('+(128+v)+','+(74+(v>>1))+','+(62+(v>>2))+')';g.fillRect(x+1,r*bh+1,bw-2,bh-2)}},true);
+const asphaltTex=canvasTex(128,128,(g,w,h)=>{g.fillStyle='#161b28';g.fillRect(0,0,w,h);
+  for(let i=0;i<900;i++){const v=22+rnd()*28|0;g.fillStyle='rgb('+v+','+(v+4)+','+(v+14)+')';g.fillRect(rnd()*w,rnd()*h,1.5,1.5)}},true);
+const winTex=canvasTex(256,256,(g,w,h)=>{g.fillStyle='#0c1122';g.fillRect(0,0,w,h);
+  for(let r=0;r<4;r++)for(let c=0;c<4;c++){const lit=rnd()<.34;
+    g.fillStyle=lit?(rnd()<.8?'#ffc47a':'#9fc0ff'):'#18213b';g.fillRect(c*64+14,r*64+12,36,40)}},true);
+const poolTex=canvasTex(128,128,(g,w,h)=>{const gr=g.createRadialGradient(64,64,0,64,64,64);
+  gr.addColorStop(0,'rgba(255,255,255,1)');gr.addColorStop(.35,'rgba(255,255,255,.35)');gr.addColorStop(1,'rgba(255,255,255,0)');
+  g.fillStyle=gr;g.fillRect(0,0,w,h)});
+
+/* ---- renderer, scene, light ---- */
+const stage=$('#stage');let renderer;
+try{renderer=new T.WebGLRenderer({antialias:true,powerPreference:'high-performance'})}
+catch(e){fail('Этот браузер не поддерживает WebGL, поэтому 3D-модель не запустится.');return}
+renderer.setPixelRatio(Math.min(window.devicePixelRatio||1,2));
+renderer.shadowMap.enabled=true;renderer.shadowMap.type=T.PCFSoftShadowMap;
+renderer.toneMapping=T.ACESFilmicToneMapping;renderer.toneMappingExposure=1.15;
+stage.appendChild(renderer.domElement);
+const scene=new T.Scene();scene.background=new T.Color(0x0a1020);scene.fog=new T.FogExp2(0x0a1020,.0095);
+const camera=new T.PerspectiveCamera(36,1,.5,900);
+scene.add(new T.HemisphereLight(0x5068a6,0x0c1019,1.05));
+const moon=new T.DirectionalLight(0xa3b8ff,1.2);moon.position.set(-34,46,40);moon.castShadow=true;
+moon.shadow.mapSize.set(2048,2048);
+{const c=moon.shadow.camera;c.left=-50;c.right=50;c.top=50;c.bottom=-50;c.near=10;c.far=150}
+moon.shadow.bias=-.0004;moon.shadow.normalBias=.05;scene.add(moon,moon.target);
+const warm=new T.PointLight(0xffa955,1.3,30,1.5);warm.position.set(SPLIT[0],3.4,D/2+1.6);scene.add(warm);
+
+/* ---- street, sidewalks, courtyard ---- */
+const env=new T.Group();scene.add(env);
+const ground=put(env,new T.PlaneGeometry(600,600),std(0x0d1322,{roughness:1}),0,0,0);
+ground.rotation.x=-Math.PI/2;ground.receiveShadow=true;
+const road=put(env,boxGeo(300,.1,9,6,6),std(0xffffff,{map:asphaltTex,roughness:.5,metalness:.1}),0,.05,14.5,1,1,1);
+road.receiveShadow=true;
+const walkMat=std(0x2b3248,{roughness:.9});
+[8.25,20.75].forEach(z=>{const s=put(env,boxGeo(300,.22,3.5,4,3.5),walkMat,0,.11,z,1,1,1);s.receiveShadow=true});
+const court=put(env,new T.PlaneGeometry(40,18),std(0x10241d,{roughness:1}),0,.02,-15.5);
+court.rotation.x=-Math.PI/2;court.receiveShadow=true;
+const paint=bas(0xcfd5e6);
+for(let x=-84;x<=84;x+=7)cube(env,paint,x,.105,15,3.2,.01,.16);
+for(let x=-13;x<=14;x+=5.5)cube(env,paint,x,.105,11.2,.12,.01,2.4);
+
+/* ---- warm light pools (additive planes are far cheaper than real lights) ---- */
+function pool(parent,x,y,z,s,c,o){const m=new T.Mesh(PLANE,new T.MeshBasicMaterial({map:poolTex,color:c,transparent:true,opacity:o,
+  blending:T.AdditiveBlending,depthWrite:false}));m.rotation.x=-Math.PI/2;m.position.set(x,y,z);m.scale.set(s,s,1);m.renderOrder=2;parent.add(m);return m}
+const poleMat=std(0x1b2133,{roughness:.6,metalness:.5}),bulbMat=bas(0xffd9a0);
+function lamp(x,z){cube(env,poleMat,x,3.1,z,.14,6.2,.14,true);cube(env,poleMat,x,6.15,z+.8,.1,.1,1.7);
+  cube(env,bulbMat,x,6.05,z+1.55,.5,.12,.3);pool(env,x,.27,z+1.5,14,0xffb862,.55)}
+[-23,-8,7,22].forEach(x=>lamp(x,9.3));
+
+/* ---- trees ---- */
+const leaf=[std(0x173d2f,{flatShading:true}),std(0x1e4d38,{flatShading:true}),std(0x255b3e,{flatShading:true})];
+const trunkMat=std(0x2c2118),BLOB=new T.IcosahedronGeometry(1,1);
+function tree(parent,x,y,z,s){cube(parent,trunkMat,x,y+s*1.1,z,.22*s,2.2*s,.22*s,true);
+  for(let i=0;i<3;i++)put(parent,BLOB,leaf[i],x+(rnd()-.5)*s*.9,y+s*(2.5+i*.55),z+(rnd()-.5)*s*.9,
+    s*(1.1-i*.18),s*(.95-i*.12),s*(1.1-i*.18),true)}
+[-17,-6,5.5,17].forEach(x=>tree(env,x,.22,8.6,1.7));
+for(let i=0;i<10;i++)tree(env,-17+rnd()*34,.02,-22+rnd()*12,1.4+rnd()*.8);
+
+/* ---- cars: three parked, three driving ---- */
+const glassC=std(0x0b1220,{roughness:.12,metalness:.8}),wheelM=std(0x080a10,{roughness:.9});
+const headM=bas(0xfff2cf),tailM=bas(0xff3a2a),WHEEL=new T.CylinderGeometry(.34,.34,.26,14);
+const movers=[];
+function car(x,z,rot,col,drive){const g=new T.Group();g.position.set(x,.1,z);g.rotation.y=rot;env.add(g);
+  const body=std(col,{roughness:.35,metalness:.55});
+  cube(g,body,0,.62,0,4.4,.7,1.85,true);cube(g,glassC,-.25,1.2,0,2.4,.55,1.6,true);
+  [[1.4,.93],[1.4,-.93],[-1.4,.93],[-1.4,-.93]].forEach(w=>{put(g,WHEEL,wheelM,w[0],.34,w[1]).rotation.x=Math.PI/2});
+  cube(g,headM,2.21,.7,.62,.06,.14,.34);cube(g,headM,2.21,.7,-.62,.06,.14,.34);
+  cube(g,tailM,-2.21,.72,.62,.06,.12,.4);cube(g,tailM,-2.21,.72,-.62,.06,.12,.4);
+  if(drive){pool(g,5.2,.17,0,9,0xfff0cf,.4);movers.push({g,dir:Math.cos(rot)>0?1:-1,v:drive})}
+  return g}
+const cc=[0x23304a,0x5b2b2f,0x2c3a33,0x4a4f5e,0x1d1f27,0x6a6f7d];
+[[-10.25,0],[-4.75,1],[6.25,2]].forEach(a=>car(a[0],11.2,Math.PI,cc[a[1]],0));
+car(30,13.7,Math.PI,cc[3],6);car(-30,16.8,0,cc[4],7);car(55,16.8,0,cc[5],6.5);
+
+/* ---- neighbouring blocks, lit windows come from one texture ---- */
+const nbMat=std(0xffffff,{map:winTex,emissive:0xffffff,emissiveMap:winTex,emissiveIntensity:.9,roughness:.9});
+const roofM=std(0x141a2b,{roughness:1});
+const block=(x,z,w,h,d)=>put(env,boxGeo(w,h,d,12,13.2),[nbMat,nbMat,roofM,roofM,nbMat,nbMat],x,h/2,z,1,1,1,true);
+block(-28,0,18,9.9,12.5);block(28,0,18,13.2,12.5);block(-24,-26,22,10,14);block(25,-28,22,13.2,14);
+block(-45,68,40,10,16);block(8,70,48,13.2,16);block(60,68,36,9.9,16);
+
+/* ---- stars ---- */
+{const n=380,p=new Float32Array(n*3);
+  for(let i=0;i<n;i++){const a=rnd()*Math.PI*2,e=.15+rnd()*1.2,r=420;
+    p[i*3]=Math.cos(a)*Math.cos(e)*r;p[i*3+1]=Math.sin(e)*r;p[i*3+2]=Math.sin(a)*Math.cos(e)*r}
+  const g=new T.BufferGeometry();g.setAttribute('position',new T.BufferAttribute(p,3));
+  scene.add(new T.Points(g,new T.PointsMaterial({size:1.8,sizeAttenuation:false,color:0xb4c2ee,fog:false,transparent:true,opacity:.75})))}
+
+/* ---- the building: each floor is its own group so it can lift off ---- */
+const tower=new T.Group();scene.add(tower);
+const F=[null];
+const stat={available:0x2f7a5c,reserved:0x9a7430,sold:0x3d4459};
+const statCss={available:'#74d6a6',reserved:'#ffb862',sold:'#9aa4bb'};
+const wallP=std(0xe6eaf3,{roughness:.8}),woodM=std(0x8c6a49),bedM=std(0x6c7aa3),pillowM=std(0xeceff7),
+  sofaM=std(0x4a5878),counterM=std(0xc3c9d8),floorM=std(0x1b2236,{roughness:1}),coreM=std(0x2b3452);
+const labelDraws=[],FONT='"Manrope",Inter,Arial,sans-serif';
+function floorMats(){return{wall:std(0xffffff,{map:brickTex,roughness:.92}),slab:std(0x7d8497,{roughness:.9}),
+  frame:std(0x151b2b,{roughness:.5,metalness:.6}),dark:std(0x0c1426,{roughness:.15,metalness:.7}),
+  lit1:bas(0xffcb86),lit2:bas(0xffb25e),lit3:bas(0xa4c6ff),warm:bas(0xffd9a0),cano:std(0x10151f,{roughness:.6,metalness:.3})}}
+
+/* entrance sign */
+const signCv=document.createElement('canvas');signCv.width=1024;signCv.height=96;
+const signTex=new T.CanvasTexture(signCv);
+function drawSign(){const g=signCv.getContext('2d');g.fillStyle='#10151f';g.fillRect(0,0,1024,96);
+  g.fillStyle='#f4f6fb';g.font='700 52px '+FONT;g.textAlign='center';g.textBaseline='middle';
+  if('letterSpacing' in g)g.letterSpacing='14px';g.fillText('ВЕСПЕР КОРТ',512,50);signTex.needsUpdate=true}
+labelDraws.push(drawSign);drawSign();
+const signMat=bas(0xffffff,{map:signTex});
+
+/* furnished plan of one home, only shown once its floor is opened */
+function buildUnit(plan,h,tiles){
+  const cx=(h.x0+h.x1)/2,cz=(h.z0+h.z1)/2,w=h.x1-h.x0,d=h.z1-h.z0;
+  const tile=put(plan,UNIT,std(stat[h.status],{roughness:.85}),cx,.045,cz,w,.05,d);
+  tile.userData.home=h;tile.receiveShadow=true;tiles.push(tile);h.tile=tile;
+  const dx=h.west?1:-1,dz=h.front?-1:1,ox=h.west?h.x0:h.x1,ix=h.west?h.x1:h.x0,fz=h.front?h.z1:h.z0,cz2=h.front?h.z0:h.z1;
+  const PH=1.15,wl=(x,z,sx,sz)=>cube(plan,wallP,x,PH/2+.07,z,sx,PH,sz,true);
+  const doorX=ix-dx*1.5,hg=.55;
+  wl((h.x0+doorX-hg)/2,cz2,doorX-hg-h.x0,.12).userData.cwall=true;wl((doorX+hg+h.x1)/2,cz2,h.x1-doorX-hg,.12).userData.cwall=true;
+  wl(ix,cz,.12,d);
+  const px=ox+dx*w*.42;wl(px,fz+dz*d*.31,.12,d*.62);
+  cube(plan,bedM,ox+dx*1.35,.38,fz+dz*1.5,2.1,.5,1.6,true);cube(plan,pillowM,ox+dx*.5,.68,fz+dz*1.5,.45,.14,1.2);
+  if(h.beds===2)cube(plan,bedM,ox+dx*1.1,.33,fz+dz*3.0,1.9,.4,.9,true);
+  cube(plan,sofaM,px+dx*2.2,.4,fz+dz*1.0,2.3,.55,.9,true);cube(plan,woodM,px+dx*2.2,.22,fz+dz*2.3,1.2,.3,.7,true);
+  cube(plan,counterM,ix-dx*.4,.5,fz+dz*2.6,.7,.9,3.2,true);cube(plan,counterM,ix-dx*2.2,.5,fz+dz*2.6,.8,.9,1.8,true);
+  const cv=document.createElement('canvas');cv.width=256;cv.height=128;const tex=new T.CanvasTexture(cv);
+  const draw=()=>{const g=cv.getContext('2d');g.clearRect(0,0,256,128);g.fillStyle='rgba(8,12,24,.78)';rr(g,16,12,224,104,26);g.fill();
+    g.fillStyle='#fff';g.font='700 54px '+FONT;g.textAlign='center';g.textBaseline='middle';g.fillText(h.id,128,50);
+    g.fillStyle=statCss[h.status];g.font='600 22px Inter,Arial,sans-serif';g.fillText(h.beds===1?'1 СПАЛЬНЯ':h.beds+' СПАЛЬНИ',128,92);tex.needsUpdate=true};
+  const lb=new T.Sprite(new T.SpriteMaterial({map:tex,transparent:true,depthTest:false,fog:false}));
+  lb.scale.set(3.6,1.8,1);lb.position.set(cx,2.2,cz);lb.renderOrder=6;plan.add(lb);labelDraws.push(draw);draw();
+}
+
+function buildFloor(f){
+  const g=new T.Group();g.position.y=(f-1)*FH;tower.add(g);
+  const m=floorMats(),hs=homes.slice((f-1)*4,f*4),sp=SPLIT[f-1];
+  put(g,boxGeo(W+.5,SL,D+.5,2,2),m.slab,0,SL/2,0,1,1,1,true);
+  const walls=new T.Group();walls.position.y=SL;g.add(walls);
+  const wh=FH-SL,pick=[];
+  const wall=(w,d,x,z)=>{const s=put(walls,boxGeo(w,wh,d,1.2,1.2),m.wall,x,wh/2,z,1,1,1,true);s.userData.floor=f;pick.push(s)};
+  wall(W,WT,0,D/2-WT/2);wall(W,WT,0,-D/2+WT/2);wall(WT,D-2*WT,-W/2+WT/2,0);wall(WT,D-2*WT,W/2-WT/2,0);
+  const win=new T.Group();g.add(win);
+  const LP={sold:.85,reserved:.45,available:.12},wy=SL+1.7;
+  function winAt(x,z,ry,w,h,st){
+    cube(win,m.frame,x,wy,z,w+.16,h+.16,.1).rotation.y=ry;
+    const mat=rnd()<LP[st]?(rnd()<.82?(rnd()<.5?m.lit1:m.lit2):m.lit3):m.dark;
+    const gl=new T.Mesh(PLANE,mat);gl.scale.set(w,h,1);gl.rotation.y=ry;
+    gl.position.set(x+Math.sin(ry)*.06,wy,z+Math.cos(ry)*.06);win.add(gl)}
+  hs.forEach(h=>{const w=h.x1-h.x0,n=Math.max(2,Math.floor(w/3.6));
+    for(let i=0;i<n;i++)winAt(h.x0+w*(i+.5)/n,h.front?D/2:-D/2,h.front?0:Math.PI,2.1,2,h.status);
+    winAt(h.west?-W/2:W/2,(h.z0+h.z1)/2,h.west?-Math.PI/2:Math.PI/2,1.9,2,h.status)});
+  winAt(sp,-D/2,Math.PI,1.2,2,'sold');
+  if(f>1)winAt(sp,D/2,0,1.2,2,'sold');
+  else{ /* lobby: glass door, canopy, sign */
+    cube(win,m.frame,sp,SL+1.2,D/2+.02,2.6,2.4,.14);
+    const door=new T.Mesh(PLANE,m.warm);door.scale.set(2.3,2.2,1);door.position.set(sp,SL+1.15,D/2+.1);win.add(door);
+    cube(win,m.cano,sp,SL+2.7,D/2+.9,4.6,.5,1.8,true);
+    const sg=new T.Mesh(PLANE,signMat);sg.scale.set(4.4,.42,1);sg.position.set(sp,SL+2.7,D/2+1.81);win.add(sg)}
+  const mats=new Set();g.traverse(o=>{if(o.material)mats.add(o.material)});
+  const plan=new T.Group();plan.position.y=SL;plan.visible=false;g.add(plan);
+  cube(plan,floorM,0,.01,0,W-2*WT,.02,D-2*WT).receiveShadow=true;
+  cube(plan,coreM,sp,.55,0,1.9,1.1,1.9,true);
+  const tiles=[];hs.forEach(h=>buildUnit(plan,h,tiles));
+  F[f]={f,g,walls,win,plan,mats,tiles,pick,p:0,cut:0,base:g.position.y};
+}
+for(let f=1;f<=FLOORS;f++)buildFloor(f);
+
+/* ---- roof garden ---- */
+const roofG=new T.Group();roofG.position.y=ROOF_Y;tower.add(roofG);
+const roofPick=[];
+{const rm=floorMats(),RT=.4,PH=.9;
+  const slab=put(roofG,boxGeo(W+.5,RT,D+.5,2,2),rm.slab,0,RT/2,0,1,1,1,true);slab.userData.roof=true;roofPick.push(slab);
+  const pw=(w,d,x,z)=>put(roofG,boxGeo(w,PH,d,1.2,1.2),rm.wall,x,RT+PH/2,z,1,1,1,true);
+  pw(W,WT,0,D/2-WT/2);pw(W,WT,0,-D/2+WT/2);pw(WT,D-2*WT,-W/2+WT/2,0);pw(WT,D-2*WT,W/2-WT/2,0);
+  cube(roofG,std(0x2b4170,{roughness:.8}),1,RT+.03,0,15,.06,8.4).receiveShadow=true;
+  const bulk=std(0x394261,{roughness:.8}),skyM=bas(0xfff0cf);
+  [[-7,-2.4],[7.2,2.6]].forEach(a=>{cube(roofG,bulk,a[0],RT+1.6,a[1],4.2,3.2,4.2,true);
+    const s=new T.Mesh(PLANE,skyM);s.rotation.x=-Math.PI/2;s.scale.set(2.6,2.6,1);s.position.set(a[0],RT+3.22,a[1]);roofG.add(s)});
+  const bed=std(0x2a2118);
+  for(let i=0;i<20;i++){const x=-10.5+rnd()*21,z=-5+rnd()*10;
+    if((Math.abs(x+7)<3.5&&Math.abs(z+2.4)<3.5)||(Math.abs(x-7.2)<3.5&&Math.abs(z-2.6)<3.5)||(Math.abs(x+.5)<2.8&&Math.abs(z-2.5)<2.4))continue;
+    const s=.6+rnd()*.7;cube(roofG,bed,x,RT+.3,z,1.1*s,.6,1.1*s,true);
+    put(roofG,BLOB,leaf[i%3],x,RT+.9+s*.35,z,.6*s,.55*s,.6*s,true)}
+  [[-2.5,1],[1.5,1],[-2.5,4],[1.5,4]].forEach(p=>cube(roofG,rm.frame,p[0],RT+1.2,p[1],.14,2.4,.14,true));
+  [1,4].forEach(z=>cube(roofG,rm.frame,-.5,RT+2.4,z,4.14,.12,.14));
+  for(let i=0;i<5;i++)cube(roofG,rm.frame,-2.5+i,RT+2.46,2.5,.08,.08,3.2);
+  const bulbG=new T.SphereGeometry(.07,6,6),bulbM2=bas(0xffd9a0);
+  [1,4].forEach(z=>{for(let i=0;i<8;i++)put(roofG,bulbG,bulbM2,-2.4+i*.55,RT+2.3,z)});
+  pool(roofG,-.5,RT+.12,2.5,9,0xffb862,.35);
+  for(let i=0;i<3;i++)cube(roofG,woodM,-4+i*1.2,RT+.28,-4.2,.8,.25,1.9,true)}
+const R={f:FLOORS+1,g:roofG,p:0,base:ROOF_Y,mats:(()=>{const s=new Set();roofG.traverse(o=>{if(o.material)s.add(o.material)});return s})()};
+
+/* ---- camera rig: orbit with drag, wheel and pinch; presets glide ---- */
+const rig={tx:0,ty:ROOF_Y+.5,tz:0,yaw:.85,pitch:1.28,r:34},goal=Object.assign({},rig);
+const VIEWS={
+  homes:{tx:0,ty:8.6,tz:0,yaw:.52,pitch:.3,r:47,fitW:38},
+  rooftop:{tx:0,ty:ROOF_Y+.5,tz:0,yaw:.85,pitch:1.28,r:34,fitW:30},
+  street:{tx:3,ty:5.6,tz:8,yaw:-1.05,pitch:-.08,r:38,fitW:46}};
+const openView=f=>({tx:0,ty:(f-1)*FH+SL+.2,tz:0,yaw:.28,pitch:.98,r:34,fitW:34});
+let curView=VIEWS.rooftop,pitchMin=-.12,lastFit=34,cw=1,ch=1,shiftX=0,shiftY=0,shiftTX=0,shiftTY=0;
+function fitR(v){const half=Math.tan(camera.fov*Math.PI/360)*camera.aspect;return clamp(Math.max(v.r,v.fitW/(2*half)),12,140)}
+function goTo(v,snap){curView=v;pitchMin=v.pitch>.6?.35:-.12;
+  const yaw=rig.yaw+Math.atan2(Math.sin(v.yaw-rig.yaw),Math.cos(v.yaw-rig.yaw));
+  lastFit=fitR(v);Object.assign(goal,{tx:v.tx,ty:v.ty,tz:v.tz,yaw,pitch:v.pitch,r:lastFit});if(snap)Object.assign(rig,goal)}
+function resize(){cw=stage.clientWidth||innerWidth;ch=stage.clientHeight||innerHeight;
+  renderer.setSize(cw,ch,false);camera.aspect=cw/ch;camera.updateProjectionMatrix();
+  const nf=fitR(curView);if(Math.abs(goal.r-lastFit)<.5)goal.r=nf;lastFit=nf}
+if(window.ResizeObserver)new ResizeObserver(resize).observe(stage);else addEventListener('resize',resize);
+resize();goTo(VIEWS.rooftop,true);
+
+const ptr=new Map(),el=renderer.domElement;let moved=0,pinch=0;
+el.addEventListener('pointerdown',e=>{el.setPointerCapture(e.pointerId);ptr.set(e.pointerId,{x:e.clientX,y:e.clientY});moved=0;
+  if(ptr.size===2){const a=[...ptr.values()];pinch=Math.hypot(a[0].x-a[1].x,a[0].y-a[1].y)}});
+el.addEventListener('pointermove',e=>{const p=ptr.get(e.pointerId);if(!p){hover(e);return}
+  const dx=e.clientX-p.x,dy=e.clientY-p.y;p.x=e.clientX;p.y=e.clientY;
+  if(ptr.size===1){moved+=Math.abs(dx)+Math.abs(dy);if(moved>6){goal.yaw-=dx*.006;goal.pitch=clamp(goal.pitch+dy*.005,pitchMin,1.5);hideTip()}}
+  else if(ptr.size===2){const a=[...ptr.values()],d=Math.hypot(a[0].x-a[1].x,a[0].y-a[1].y);
+    if(pinch)goal.r=clamp(goal.r*pinch/d,12,140);pinch=d;moved=99}});
+function release(e){if(!ptr.has(e.pointerId))return;ptr.delete(e.pointerId);if(ptr.size<2)pinch=0;
+  if(e.type==='pointerup'&&moved<=6&&ptr.size===0)click(e)}
+el.addEventListener('pointerup',release);el.addEventListener('pointercancel',release);
+el.addEventListener('pointerleave',()=>hideTip());
+el.addEventListener('wheel',e=>{e.preventDefault();goal.r=clamp(goal.r*Math.exp(e.deltaY*.0011),12,140)},{passive:false});
+const ray=new T.Raycaster(),nd=new T.Vector2();
+function pickAt(e){const r=el.getBoundingClientRect();nd.set((e.clientX-r.left)/r.width*2-1,-((e.clientY-r.top)/r.height)*2+1);
+  ray.setFromCamera(nd,camera);const hit=ray.intersectObjects(pickables(),false)[0];return hit?hit.object:null}
+
+/* ---- state, floor lift and cut, picking ---- */
+let openFloor=0,selHome=null,PHOTOS={};
+function pickables(){const a=[];
+  if(!openFloor){for(let f=1;f<=FLOORS;f++)a.push(...F[f].pick);a.push(...roofPick);return a}
+  for(let f=1;f<openFloor;f++)a.push(...F[f].pick);a.push(...F[openFloor].tiles);return a}
+function setOpacity(mats,a){mats.forEach(m=>{m.transparent=a<.999;m.opacity=a;m.depthWrite=a>.98})}
+function stepFloors(dt){const s=1-Math.exp(-dt*(reduce?30:4));
+  for(let f=1;f<=FLOORS+1;f++){const o=f>FLOORS?R:F[f],tgt=openFloor&&f>openFloor?1:0;
+    o.p+=(tgt-o.p)*s;if(Math.abs(tgt-o.p)<.002)o.p=tgt;
+    const a=1-clamp((o.p-.1)/.65,0,1);
+    o.g.position.y=o.base+ease(o.p)*(10+f*2);
+    if(o.a!==a){setOpacity(o.mats,a);o.a=a}
+    o.g.visible=a>.01;
+    if(o.walls){const ct=f===openFloor?1:0;o.cut+=(ct-o.cut)*s;if(Math.abs(ct-o.cut)<.002)o.cut=ct;
+      o.walls.scale.y=1-.78*ease(o.cut);o.win.visible=o.cut<.2;o.plan.visible=o.cut>.03}}}
+function stepMovers(dt){if(reduce)return;
+  movers.forEach(m=>{const g=m.g;g.position.x+=m.dir*m.v*dt;if(g.position.x>95)g.position.x=-95;else if(g.position.x<-95)g.position.x=95})}
+function stepCamera(dt){const k=1-Math.exp(-dt*(reduce?30:3.4));
+  for(const key of ['tx','ty','tz','yaw','pitch','r'])rig[key]+=(goal[key]-rig[key])*k;
+  const cp=Math.cos(rig.pitch);
+  camera.position.set(rig.tx+rig.r*Math.sin(rig.yaw)*cp,Math.max(rig.ty+rig.r*Math.sin(rig.pitch),1.1),rig.tz+rig.r*Math.cos(rig.yaw)*cp);
+  camera.lookAt(rig.tx,rig.ty,rig.tz);
+  shiftX+=(shiftTX-shiftX)*k;shiftY+=(shiftTY-shiftY)*k;
+  if(Math.abs(shiftX)+Math.abs(shiftY)>.5)camera.setViewOffset(cw,ch,shiftX,shiftY,cw,ch);
+  else if(camera.view&&camera.view.enabled)camera.clearViewOffset()}
+
+/* hover tooltip and click */
+const ui=$('#ui'),tip=$('#tip');let tipRaf=0;
+const cap=s=>s.charAt(0).toUpperCase()+s.slice(1);
+function hideTip(){tip.hidden=true;el.style.cursor=''}
+function hover(e){if(tipRaf||e.pointerType==='touch')return;
+  tipRaf=requestAnimationFrame(()=>{tipRaf=0;const o=pickAt(e);if(!o){hideTip();return}
+    const h=o.userData.home;
+    tip.textContent=h?'Квартира '+h.id+' · '+bedsTxt(h.beds)+' · '+STAT_RU[h.status]:o.userData.roof?'Крыша с садом':'Этаж '+o.userData.floor;
+    el.style.cursor='pointer';tip.hidden=false;const r=ui.getBoundingClientRect();
+    tip.style.transform='translate('+(e.clientX-r.left+14)+'px,'+(e.clientY-r.top+14)+'px)'})}
+function click(e){const o=pickAt(e);
+  if(!o){if(selHome)selectHome(null);return}
+  if(o.userData.home)selectHome(o.userData.home);
+  else if(o.userData.roof)setView('rooftop');
+  else openFloorNo(o.userData.floor)}
+
+/* ---- render loop ---- */
+let last=performance.now();
+function frame(now){const dt=Math.min(.05,(now-last)/1000);last=now;
+  stepCamera(dt);stepFloors(dt);stepMovers(dt);renderer.render(scene,camera);requestAnimationFrame(frame)}
+requestAnimationFrame(frame);
+
+/* ---- interface ---- */
+let useFt=false;
+const money=n=>n.toLocaleString('ru-RU')+' ₸';
+const fmtArea=m2=>useFt?Math.round(m2*10.7639).toLocaleString('ru-RU')+' фут²':Math.round(m2)+' м²';
+const fmtPpa=h=>money(Math.round(h.price/(useFt?h.area*10.7639:h.area)/1000)*1000);
+const coarse=matchMedia('(pointer: coarse)').matches;
+const navBtns=[...document.querySelectorAll('#nav button')];
+const rail=$('#rail'),sheet=$('#sheet'),list=$('#unitList'),card=$('#unitCard');
+const markNav=v=>navBtns.forEach(b=>b.classList.toggle('on',b.dataset.view===v));
+function hint(){$('#hint').textContent=openFloor
+  ?(coarse?'Нажмите на квартиру, чтобы увидеть детали':'Нажмите на квартиру · стрелки вверх и вниз меняют этаж')
+  :(coarse?'Вращайте пальцем · сведите пальцы, чтобы приблизить · нажмите на этаж, чтобы открыть':'Вращайте мышью · колесо приближает · нажмите на этаж, чтобы открыть')}
+
+rail.innerHTML='<small>ЭТАЖ</small>'+Array.from({length:FLOORS},(_,i)=>{const n=FLOORS-i;
+  return'<button type="button" data-f="'+n+'" aria-label="Открыть этаж '+n+'">'+n+'</button>'}).join('')
+  +'<hr><button type="button" data-f="0" aria-label="Показать весь дом" title="Весь дом">Все</button>';
+function markRail(){rail.querySelectorAll('button').forEach(b=>b.classList.toggle('on',+b.dataset.f===openFloor))}
+rail.addEventListener('click',e=>{const b=e.target.closest('button');if(!b)return;const f=+b.dataset.f;f?openFloorNo(f):closeFloors()});
+
+function renderSheet(){if(!openFloor)return;
+  const hs=homes.slice((openFloor-1)*4,openFloor*4),av=hs.filter(h=>h.status==='available').length;
+  $('#shTitle').textContent='Этаж '+openFloor;$('#shSub').textContent='Свободно '+av+' из 4';
+  list.innerHTML=hs.map(h=>'<li><button type="button" class="unit'+(selHome===h?' on':'')+'" data-id="'+h.id+'"><span class="nm">'+h.id
+    +'</span><span class="sp">'+bedsTxt(h.beds)+' · '+fmtArea(h.area)+'</span><span class="pr">'+money(h.price)
+    +'</span><span class="sp">'+h.view+'</span><span class="st '+h.status+'">'+STAT_RU[h.status]+'</span></button></li>').join('')}
+function renderCard(){if(!selHome||!openFloor){card.hidden=true;return}
+  const h=selHome,ph=PHOTOS[h.id]||PHOTOS['type-'+h.beds]||[];card.hidden=false;
+  card.innerHTML='<h3><span>Квартира '+h.id+'</span><span class="st '+h.status+'">'+STAT_RU[h.status]+'</span></h3>'
+    +(ph.length?'<div class="ph">'+ph.map(u=>'<img src="'+u+'" alt="Фото квартиры '+h.id+'" loading="lazy">').join('')+'</div>':'')
+    +'<dl><dt>Спальни</dt><dd>'+h.beds+(h.study?' + кабинет':'')+'</dd><dt>Санузлы</dt><dd>'+h.baths+'</dd>'
+    +'<dt>Площадь</dt><dd>'+fmtArea(h.area)+'</dd><dt>Вид из окон</dt><dd>'+h.view+'</dd>'
+    +'<dt>Цена за '+(useFt?'фут²':'м²')+'</dt><dd>'+fmtPpa(h)+'</dd><dt>Цена</dt><dd><b>'+money(h.price)+'</b></dd></dl>'
+    +(h.status==='sold'?'<p style="margin:0;color:var(--mute);font-size:12px">Квартира продана. Выберите другую на этом этаже.</p>'
+      :'<button type="button" class="cta" id="viewBtn">Записаться на просмотр</button>')}
+list.addEventListener('click',e=>{const b=e.target.closest('.unit');if(b)selectHome(homes.find(h=>h.id===b.dataset.id))});
+card.addEventListener('click',e=>{if(e.target.id==='viewBtn')openContact(selHome)});
+$('#shClose').addEventListener('click',()=>closeFloors());
+
+const outline=new T.LineLoop(new T.BufferGeometry().setFromPoints([new T.Vector3(-.5,0,-.5),new T.Vector3(.5,0,-.5),
+  new T.Vector3(.5,0,.5),new T.Vector3(-.5,0,.5)]),new T.LineBasicMaterial({color:0xffb862}));
+outline.visible=false;scene.add(outline);
+function selectHome(h){
+  if(selHome&&selHome.tile){selHome.tile.material.emissive.setHex(0);selHome.tile.position.y=.045}
+  selHome=h;
+  if(h){const t=h.tile;t.material.emissive.setHex(0xffb862);t.material.emissiveIntensity=.4;t.position.y=.1;
+    const p=new T.Vector3();t.getWorldPosition(p);outline.position.set(p.x,p.y+.2,p.z);outline.scale.set(h.x1-h.x0,1,h.z1-h.z0);outline.visible=true}
+  else outline.visible=false;
+  renderSheet();renderCard();
+  if(h&&innerWidth<=760)setTimeout(()=>card.scrollIntoView({block:'nearest',behavior:reduce?'auto':'smooth'}),60)}
+
+function openFloorNo(f){if(f===openFloor)return;selectHome(null);openFloor=f;
+  markNav('homes');markRail();sheet.hidden=false;document.body.classList.add('open');renderSheet();renderCard();
+  const wide=innerWidth>760;shiftTX=wide?Math.min(175,cw*.17):0;shiftTY=wide?0:ch*.17;
+  goTo(openView(f));hint()}
+function closeFloors(silent){selectHome(null);openFloor=0;sheet.hidden=true;document.body.classList.remove('open');
+  markRail();shiftTX=shiftTY=0;if(!silent){markNav('homes');goTo(VIEWS.homes)}hint()}
+function setView(v){closeFloors(true);markNav(v);goTo(VIEWS[v]);hint()}
+navBtns.forEach(b=>b.addEventListener('click',()=>setView(b.dataset.view)));
+
+function setUnits(ft){useFt=ft;$('#uFt').classList.toggle('on',ft);$('#uM').classList.toggle('on',!ft);
+  $('#uFt').setAttribute('aria-pressed',String(ft));$('#uM').setAttribute('aria-pressed',String(!ft));renderSheet();renderCard()}
+$('#uFt').addEventListener('click',()=>setUnits(true));$('#uM').addEventListener('click',()=>setUnits(false));
+
+/* contact: nothing is sent anywhere, the enquiry is copied for the visitor */
+const contact=$('#contact'),msg=$('#ctMsg'),note=$('#ctNote');
+function openContact(h){const ok=h&&h.status!=='sold';
+  msg.value=ok?'Здравствуйте! Хочу записаться на просмотр квартиры '+h.id+' ('+bedsTxt(h.beds)+', '+fmtArea(h.area)+', '+money(h.price)+') в ЖК «Веспер Корт».'
+    :'Здравствуйте! Хочу записаться на просмотр квартиры в ЖК «Веспер Корт».';
+  note.textContent='';contact.hidden=false;$('#ctClose').focus()}
+function closeContact(){contact.hidden=true}
+function copyText(text,src){const done=()=>{note.textContent='Скопировано.'};
+  const fallback=()=>{if(src.select){src.focus();src.select()}else{const r=document.createRange();r.selectNodeContents(src);
+    const s=getSelection();s.removeAllRanges();s.addRange(r)}note.textContent='Текст выделен. Нажмите Ctrl+C или Cmd+C, чтобы скопировать.'};
+  try{navigator.clipboard.writeText(text).then(done,fallback)}catch(e){fallback()}}
+$('#contactBtn').addEventListener('click',()=>openContact(selHome));
+contact.addEventListener('click',e=>{if(e.target===contact){closeContact();return}
+  const b=e.target.closest('[data-copy]');if(b){const s=$(b.dataset.copy);copyText(s.textContent,s)}});
+$('#ctCopy').addEventListener('click',()=>copyText(msg.value,msg));$('#ctClose').addEventListener('click',closeContact);
+
+addEventListener('keydown',e=>{
+  if(e.key==='Escape'){if(!contact.hidden)closeContact();else if(openFloor)closeFloors()}
+  else if(openFloor&&contact.hidden&&(e.key==='ArrowUp'||e.key==='ArrowDown')){
+    const n=openFloor+(e.key==='ArrowUp'?1:-1);if(n>=1&&n<=FLOORS){e.preventDefault();openFloorNo(n)}}});
+
+/* ---- start ---- */
+if(document.fonts&&document.fonts.load)Promise.all([document.fonts.load('700 54px "Manrope"','ВЕСПЕР КОРТ 5АБВГ'),document.fonts.load('600 22px "Inter"','1 СПАЛЬНЯ')]).then(()=>labelDraws.forEach(d=>d())).catch(()=>{});
+setUnits(false);hint();markRail();
+setTimeout(()=>{bootEl.classList.add('gone');if(!document.body.classList.contains('shoot')){markNav('homes');goTo(VIEWS.homes)}},reduce?60:800);
+
+/* photos made in Higgsfield: when photos/manifest.json sits next to the page, they appear in the home card */
+fetch('photos/manifest.json').then(r=>r.ok?r.json():{}).then(j=>{PHOTOS=j||{};renderCard()}).catch(()=>{});
+
+/* shoot mode for Higgsfield: #shot-5-1 shows one furnished home (floor 5, second home) with no interface */
+function snapFloors(){for(let f=1;f<=FLOORS+1;f++){const o=f>FLOORS?R:F[f],lift=openFloor&&f>openFloor;o.p=lift?1:0;
+  if(o.walls){o.cut=f===openFloor?1:0;o.walls.scale.y=1-.78*ease(o.cut);o.win.visible=o.cut<.2;o.plan.visible=o.cut>.03}
+  const a=lift?0:1;setOpacity(o.mats,a);o.a=a;o.g.visible=a>.01;o.g.position.y=o.base+(lift?10+f*2:0)}}
+function shot(){const m=location.hash.match(/^#shot-(\d)-(\d)$/);if(!m)return;
+  const f=+m[1],h=homes[(f-1)*4+Number(m[2])];if(!h)return;
+  document.body.classList.add('shoot');bootEl.classList.add('gone');
+  closeFloors(true);openFloorNo(f);shiftTX=shiftTY=shiftX=shiftY=0;
+  scene.traverse(o=>{if(o.isSprite||o.userData.cwall)o.visible=false;if(o.userData.home)o.material.color.setHex(0xb59a78);
+    if(o.isHemisphereLight)o.intensity=1.9;if(o.isDirectionalLight)o.color.setHex(0xfff0dc)});renderer.toneMappingExposure=1.5;
+  goTo({tx:(h.x0+h.x1)/2,ty:(f-1)*FH+SL+.2,tz:(h.z0+h.z1)/2,yaw:h.front?Math.PI:0,pitch:.85,r:13.5,fitW:12},true);snapFloors()}
+addEventListener('hashchange',shot);shot();
+})();
+</script>
+
+</body>
+</html>
