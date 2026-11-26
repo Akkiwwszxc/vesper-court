@@ -6,7 +6,9 @@
 
 ## Живая версия
 
-Включите GitHub Pages: **Settings → Pages → Branch: `main`, папка `/ (root)` → Save**. Через минуту страница откроется по адресу `https://<ваш-логин>.github.io/vesper-court/`.
+https://akkiwwszxc.github.io/vesper-court/
+
+Если страница не открывается, включите GitHub Pages: **Settings → Pages → Branch: `main`, папка `/ (root)` → Save**. Через минуту она появится по этому адресу.
 
 ## Запуск у себя
 
